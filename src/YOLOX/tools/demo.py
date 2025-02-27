@@ -1,14 +1,14 @@
-# #!/usr/bin/env python3
-# # -*- coding:utf-8 -*-
-# # Copyright (c) Megvii, Inc. and its affiliates.
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
+# Copyright (c) Megvii, Inc. and its affiliates.
 
 # import argparse
 # import os
 # import time
+# import subprocess
+# import psutil
 # from loguru import logger
-
 # import cv2
-
 # import torch
 
 # from yolox.data.data_augment import ValTransform
@@ -21,94 +21,27 @@
 
 # def make_parser():
 #     parser = argparse.ArgumentParser("YOLOX Demo!")
-#     parser.add_argument(
-#         "demo", default="image", help="demo type, eg. image, video and webcam"
-#     )
+#     parser.add_argument("demo", default="image", help="demo type: image, video, webcam")
 #     parser.add_argument("-expn", "--experiment-name", type=str, default=None)
 #     parser.add_argument("-n", "--name", type=str, default=None, help="model name")
-
-#     parser.add_argument(
-#         "--path", default="./assets/dog.jpg", help="path to images or video"
-#     )
+#     parser.add_argument("--path", default="./assets/dog.jpg", help="path to images or video")
 #     parser.add_argument("--camid", type=int, default=0, help="webcam demo camera id")
-#     parser.add_argument(
-#         "--save_result",
-#         action="store_true",
-#         help="whether to save the inference result of image/video",
-#     )
-
-#     # exp file
-#     parser.add_argument(
-#         "-f",
-#         "--exp_file",
-#         default=None,
-#         type=str,
-#         help="please input your experiment description file",
-#     )
-#     parser.add_argument("-c", "--ckpt", default=None, type=str, help="ckpt for eval")
-#     parser.add_argument(
-#         "--device",
-#         default="cpu",
-#         type=str,
-#         help="device to run our model, can either be cpu or gpu",
-#     )
-#     parser.add_argument("--conf", default=0.3, type=float, help="test conf")
-#     parser.add_argument("--nms", default=0.3, type=float, help="test nms threshold")
-#     parser.add_argument("--tsize", default=None, type=int, help="test img size")
-#     parser.add_argument(
-#         "--fp16",
-#         dest="fp16",
-#         default=False,
-#         action="store_true",
-#         help="Adopting mix precision evaluating.",
-#     )
-#     parser.add_argument(
-#         "--legacy",
-#         dest="legacy",
-#         default=False,
-#         action="store_true",
-#         help="To be compatible with older versions",
-#     )
-#     parser.add_argument(
-#         "--fuse",
-#         dest="fuse",
-#         default=False,
-#         action="store_true",
-#         help="Fuse conv and bn for testing.",
-#     )
-#     parser.add_argument(
-#         "--trt",
-#         dest="trt",
-#         default=False,
-#         action="store_true",
-#         help="Using TensorRT model for testing.",
-#     )
+#     parser.add_argument("--save_result", action="store_true", help="save inference result of image/video")
+#     parser.add_argument("-f", "--exp_file", default=None, type=str, help="experiment description file")
+#     parser.add_argument("-c", "--ckpt", default=None, type=str, help="checkpoint for evaluation")
+#     parser.add_argument("--device", default="cpu", type=str, help="device to run model: cpu or gpu")
+#     parser.add_argument("--conf", default=0.3, type=float, help="test confidence threshold")
+#     parser.add_argument("--nms", default=0.3, type=float, help="test NMS threshold")
+#     parser.add_argument("--tsize", default=None, type=int, help="test image size")
+#     parser.add_argument("--fp16", default=False, action="store_true", help="use mixed precision")
+#     parser.add_argument("--legacy", default=False, action="store_true", help="support older versions")
+#     parser.add_argument("--fuse", default=False, action="store_true", help="fuse conv and bn for testing")
+#     parser.add_argument("--trt", default=False, action="store_true", help="use TensorRT model for testing")
 #     return parser
 
 
-# def get_image_list(path):
-#     image_names = []
-#     for maindir, subdir, file_name_list in os.walk(path):
-#         for filename in file_name_list:
-#             apath = os.path.join(maindir, filename)
-#             ext = os.path.splitext(apath)[1]
-#             if ext in IMAGE_EXT:
-#                 image_names.append(apath)
-#     return image_names
-
-
 # class Predictor(object):
-#     def __init__(
-#         self,
-#         model,
-#         exp,
-#         cls_names=COCO_CLASSES,
-#         trt_file=None,
-#         decoder=None,
-#         device="cpu",
-#         fp16=False,
-#         legacy=False,
-#     ):
+#     def __init__(self, model, exp, cls_names=COCO_CLASSES, trt_file=None, decoder=None, device="cpu", fp16=False, legacy=False):
 #         self.model = model
 #         self.cls_names = cls_names
 #         self.decoder = decoder
@@ -119,15 +52,6 @@
 #         self.device = device
 #         self.fp16 = fp16
 #         self.preproc = ValTransform(legacy=legacy)
-#         if trt_file is not None:
-#             from torch2trt import TRTModule
-
-#             model_trt = TRTModule()
-#             model_trt.load_state_dict(torch.load(trt_file))
-
-#             x = torch.ones(1, 3, exp.test_size[0], exp.test_size[1]).cuda()
-#             self.model(x)
-#             self.model = model_trt
 
 #     def inference(self, img):
 #         img_info = {"id": 0}
@@ -146,224 +70,125 @@
 #         img_info["ratio"] = ratio
 
 #         img, _ = self.preproc(img, None, self.test_size)
-#         img = torch.from_numpy(img).unsqueeze(0)
-#         img = img.float()
+#         img = torch.from_numpy(img).unsqueeze(0).float()
 #         if self.device == "gpu":
 #             img = img.cuda()
 #             if self.fp16:
-#                 img = img.half()  # to FP16
+#                 img = img.half()  # Use FP16
 
 #         with torch.no_grad():
 #             t0 = time.time()
 #             outputs = self.model(img)
+#             infer_time = time.time() - t0  # Measure inference time
+#             fps = 1.0 / infer_time if infer_time > 0 else 0  # Calculate FPS
+
 #             if self.decoder is not None:
 #                 outputs = self.decoder(outputs, dtype=outputs.type())
-#             outputs = postprocess(
-#                 outputs, self.num_classes, self.confthre,
-#                 self.nmsthre, class_agnostic=True
-#             )
-#             logger.info("Infer time: {:.4f}s".format(time.time() - t0))
+#             outputs = postprocess(outputs, self.num_classes, self.confthre, self.nmsthre, class_agnostic=True)
+
+#             # 🛠️ Log FPS and inference time
+#             logger.info(f"Infer time: {infer_time:.4f}s | FPS: {fps:.2f}")
+
+#             # 🛠️ Log GPU details
+#             if torch.cuda.is_available() and self.device == "gpu":
+#                 num_gpus = torch.cuda.device_count()
+#                 current_gpu = torch.cuda.current_device()
+#                 gpu_name = torch.cuda.get_device_name(current_gpu)
+                
+#                 gpu_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # Convert to MB
+#                 gpu_usage = subprocess.run(
+#                     ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+#                     capture_output=True, text=True
+#                 )
+
+#                 logger.info(f"Number of GPUs Available: {num_gpus}")
+#                 logger.info(f"Using GPU {current_gpu}: {gpu_name}")
+#                 logger.info(f"GPU Memory Used: {gpu_memory:.2f} MB | GPU Utilization: {gpu_usage.stdout.strip()}%")
+
+#             # 🛠️ Log CPU and RAM usage
+#             cpu_usage = psutil.cpu_percent(interval=1)
+#             ram_usage = psutil.virtual_memory().percent
+#             logger.info(f"CPU Usage: {cpu_usage:.2f}% | RAM Usage: {ram_usage:.2f}%")
+
 #         return outputs, img_info
-
-#     def visual(self, output, img_info, cls_conf=0.35):
-#         ratio = img_info["ratio"]
-#         img = img_info["raw_img"]
-#         if output is None:
-#             return img
-#         output = output.cpu()
-
-#         bboxes = output[:, 0:4]
-
-#         # preprocessing: resize
-#         bboxes /= ratio
-
-#         cls = output[:, 6]
-#         scores = output[:, 4] * output[:, 5]
-
-#         vis_res = vis(img, bboxes, scores, cls, cls_conf, self.cls_names)
-#         return vis_res
-
-
-# def image_demo(predictor, vis_folder, path, current_time, save_result):
-#     if os.path.isdir(path):
-#         files = get_image_list(path)
-#     else:
-#         files = [path]
-#     files.sort()
-#     for image_name in files:
-#         outputs, img_info = predictor.inference(image_name)
-#         result_image = predictor.visual(outputs[0], img_info, predictor.confthre)
-#         if save_result:
-#             save_folder = os.path.join(
-#                 vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
-#             )
-#             os.makedirs(save_folder, exist_ok=True)
-#             save_file_name = os.path.join(save_folder, os.path.basename(image_name))
-#             logger.info("Saving detection result in {}".format(save_file_name))
-#             cv2.imwrite(save_file_name, result_image)
-#         ch = cv2.waitKey(0)
-#         if ch == 27 or ch == ord("q") or ch == ord("Q"):
-#             break
 
 
 # def imageflow_demo(predictor, vis_folder, current_time, args):
-#     cap = cv2.VideoCapture(args.path if args.demo == "video" else args.camid)
-#     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # float
-#     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float
+#     cap = cv2.VideoCapture(args.path)
+#     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+#     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 #     fps = cap.get(cv2.CAP_PROP_FPS)
+    
+#     logger.info(f"Processing video: {args.path}")
+#     logger.info(f"Video resolution: {width}x{height} | FPS: {fps}")
+
 #     if args.save_result:
 #         save_folder = os.path.join(
 #             vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time)
 #         )
 #         os.makedirs(save_folder, exist_ok=True)
-#         if args.demo == "video":
-#             save_path = os.path.join(save_folder, os.path.basename(args.path))
-#         else:
-#             save_path = os.path.join(save_folder, "camera.mp4")
-#         logger.info(f"video save_path is {save_path}")
+#         save_path = os.path.join(save_folder, os.path.basename(args.path))
+#         logger.info(f"Output video will be saved at: {save_path}")
+
 #         vid_writer = cv2.VideoWriter(
-#             save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (int(width), int(height))
+#             save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
 #         )
+
+#     frame_id = 0
 #     while True:
 #         ret_val, frame = cap.read()
-#         if ret_val:
-#             outputs, img_info = predictor.inference(frame)
-#             result_frame = predictor.visual(outputs[0], img_info, predictor.confthre)
-#             if args.save_result:
-#                 vid_writer.write(result_frame)
-#             else:
-#                 cv2.namedWindow("yolox", cv2.WINDOW_NORMAL)
-#                 cv2.imshow("yolox", result_frame)
-#             ch = cv2.waitKey(1)
-#             if ch == 27 or ch == ord("q") or ch == ord("Q"):
-#                 break
-#         else:
-#             break
+#         if not ret_val:
+#             break  
+
+#         t0 = time.time()  
+#         outputs, img_info = predictor.inference(frame)
+#         infer_time = time.time() - t0  
+#         fps_calc = 1.0 / infer_time if infer_time > 0 else 0  
+        
+#         logger.info(f"[Frame {frame_id}] Infer time: {infer_time:.4f}s | FPS: {fps_calc:.2f}")
+#         frame_id += 1
+
+#     cap.release()
+#     if args.save_result:
+#         vid_writer.release()
+#     logger.info("Video processing completed.")
 
 
 # def main(exp, args):
-#     if not args.experiment_name:
-#         args.experiment_name = exp.exp_name
-
-#     file_name = os.path.join(exp.output_dir, args.experiment_name)
-#     os.makedirs(file_name, exist_ok=True)
-
-#     vis_folder = None
-#     if args.save_result:
-#         vis_folder = os.path.join(file_name, "vis_res")
-#         os.makedirs(vis_folder, exist_ok=True)
-
-#     if args.trt:
-#         args.device = "gpu"
-
-#     logger.info("Args: {}".format(args))
-
-#     if args.conf is not None:
-#         exp.test_conf = args.conf
-#     if args.nms is not None:
-#         exp.nmsthre = args.nms
-#     if args.tsize is not None:
-#         exp.test_size = (args.tsize, args.tsize)
-
 #     model = exp.get_model()
-#     logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
-
-#     if args.device == "gpu":
-#         model.cuda()
-#         if args.fp16:
-#             model.half()  # to FP16
 #     model.eval()
-
-#     if not args.trt:
-#         if args.ckpt is None:
-#             ckpt_file = os.path.join(file_name, "best_ckpt.pth")
-#         else:
-#             ckpt_file = args.ckpt
-#         logger.info("loading checkpoint")
-#         ckpt = torch.load(ckpt_file, map_location="cpu")
-#         # load the model state dict
-#         model.load_state_dict(ckpt["model"])
-#         logger.info("loaded checkpoint done.")
-
-#     if args.fuse:
-#         logger.info("\tFusing model...")
-#         model = fuse_model(model)
-
-#     if args.trt:
-#         assert not args.fuse, "TensorRT model is not support model fusing!"
-#         trt_file = os.path.join(file_name, "model_trt.pth")
-#         assert os.path.exists(
-#             trt_file
-#         ), "TensorRT model is not found!\n Run python3 tools/trt.py first!"
-#         model.head.decode_in_inference = False
-#         decoder = model.head.decode_outputs
-#         logger.info("Using TensorRT to inference")
-#     else:
-#         trt_file = None
-#         decoder = None
-
-#     predictor = Predictor(
-#         model, exp, COCO_CLASSES, trt_file, decoder,
-#         args.device, args.fp16, args.legacy,
-#     )
+#     predictor = Predictor(model, exp, COCO_CLASSES, None, None, args.device, args.fp16, args.legacy)
 #     current_time = time.localtime()
+
 #     if args.demo == "image":
 #         image_demo(predictor, vis_folder, args.path, current_time, args.save_result)
-#     elif args.demo == "video" or args.demo == "webcam":
+#     elif args.demo == "video":
 #         imageflow_demo(predictor, vis_folder, current_time, args)
 
 
 # if __name__ == "__main__":
 #     args = make_parser().parse_args()
 #     exp = get_exp(args.exp_file, args.name)
-
 #     main(exp, args)
-
-
-#!/usr/bin/env python3
-# -*- coding:utf-8 -*-
-# Copyright (c) Megvii, Inc. and its affiliates.
 
 import argparse
 import os
 import time
-import subprocess
-import psutil
-from loguru import logger
 import cv2
 import torch
+import torch.backends.cudnn as cudnn
+import psutil
+from loguru import logger
 
+from yolox.exp import get_exp, check_exp_value
 from yolox.data.data_augment import ValTransform
+from yolox.utils import configure_nccl, configure_omp, configure_module
+from yolox.utils.visualize import vis
 from yolox.data.datasets import COCO_CLASSES
-from yolox.exp import get_exp
-from yolox.utils import fuse_model, get_model_info, postprocess, vis
-
-IMAGE_EXT = [".jpg", ".jpeg", ".webp", ".bmp", ".png"]
 
 
-def make_parser():
-    parser = argparse.ArgumentParser("YOLOX Demo!")
-    parser.add_argument("demo", default="image", help="demo type: image, video, webcam")
-    parser.add_argument("-expn", "--experiment-name", type=str, default=None)
-    parser.add_argument("-n", "--name", type=str, default=None, help="model name")
-    parser.add_argument("--path", default="./assets/dog.jpg", help="path to images or video")
-    parser.add_argument("--camid", type=int, default=0, help="webcam demo camera id")
-    parser.add_argument("--save_result", action="store_true", help="save inference result of image/video")
-    parser.add_argument("-f", "--exp_file", default=None, type=str, help="experiment description file")
-    parser.add_argument("-c", "--ckpt", default=None, type=str, help="checkpoint for evaluation")
-    parser.add_argument("--device", default="cpu", type=str, help="device to run model: cpu or gpu")
-    parser.add_argument("--conf", default=0.3, type=float, help="test confidence threshold")
-    parser.add_argument("--nms", default=0.3, type=float, help="test NMS threshold")
-    parser.add_argument("--tsize", default=None, type=int, help="test image size")
-    parser.add_argument("--fp16", default=False, action="store_true", help="use mixed precision")
-    parser.add_argument("--legacy", default=False, action="store_true", help="support older versions")
-    parser.add_argument("--fuse", default=False, action="store_true", help="fuse conv and bn for testing")
-    parser.add_argument("--trt", default=False, action="store_true", help="use TensorRT model for testing")
-    return parser
-
-
-class Predictor(object):
-    def __init__(self, model, exp, cls_names=COCO_CLASSES, trt_file=None, decoder=None, device="cpu", fp16=False, legacy=False):
+class Predictor:
+    def __init__(self, model, exp, cls_names=COCO_CLASSES, decoder=None, device="cpu", fp16=False, legacy=False):
         self.model = model
         self.cls_names = cls_names
         self.decoder = decoder
@@ -374,6 +199,21 @@ class Predictor(object):
         self.device = device
         self.fp16 = fp16
         self.preproc = ValTransform(legacy=legacy)
+
+        # ✅ Log GPU/CPU metrics at initialization
+        cpu_usage = psutil.cpu_percent(interval=1)
+        ram_usage = psutil.virtual_memory().percent
+        logger.info(f"CPU Usage: {cpu_usage:.2f}% | RAM Usage: {ram_usage:.2f}%")
+
+        if torch.cuda.is_available() and self.device == "gpu":
+            num_gpus = torch.cuda.device_count()
+            current_gpu = torch.cuda.current_device()
+            gpu_name = torch.cuda.get_device_name(current_gpu)
+            total_memory = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)  # Total GPU memory in MB
+
+            logger.info(f"Number of GPUs Available: {num_gpus}")
+            logger.info(f"Using GPU {current_gpu}: {gpu_name}")
+            logger.info(f"Total GPU Memory: {total_memory:.2f} MB")
 
     def inference(self, img):
         img_info = {"id": 0}
@@ -393,97 +233,147 @@ class Predictor(object):
 
         img, _ = self.preproc(img, None, self.test_size)
         img = torch.from_numpy(img).unsqueeze(0).float()
+
         if self.device == "gpu":
             img = img.cuda()
             if self.fp16:
-                img = img.half()  # Use FP16
+                img = img.half()
 
         with torch.no_grad():
             t0 = time.time()
             outputs = self.model(img)
-            infer_time = time.time() - t0  # Measure inference time
-            fps = 1.0 / infer_time if infer_time > 0 else 0  # Calculate FPS
+            infer_time = time.time() - t0
+            fps = 1.0 / infer_time if infer_time > 0 else 0
 
-            if self.decoder is not None:
-                outputs = self.decoder(outputs, dtype=outputs.type())
-            outputs = postprocess(outputs, self.num_classes, self.confthre, self.nmsthre, class_agnostic=True)
-
-            # 🛠️ Log FPS and inference time
+            # ✅ Log inference time and FPS per frame
             logger.info(f"Infer time: {infer_time:.4f}s | FPS: {fps:.2f}")
-
-            # 🛠️ Log GPU details
-            if torch.cuda.is_available() and self.device == "gpu":
-                num_gpus = torch.cuda.device_count()
-                current_gpu = torch.cuda.current_device()
-                gpu_name = torch.cuda.get_device_name(current_gpu)
-                
-                gpu_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # Convert to MB
-                gpu_usage = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
-                    capture_output=True, text=True
-                )
-
-                logger.info(f"Number of GPUs Available: {num_gpus}")
-                logger.info(f"Using GPU {current_gpu}: {gpu_name}")
-                logger.info(f"GPU Memory Used: {gpu_memory:.2f} MB | GPU Utilization: {gpu_usage.stdout.strip()}%")
-
-            # 🛠️ Log CPU and RAM usage
-            cpu_usage = psutil.cpu_percent(interval=1)
-            ram_usage = psutil.virtual_memory().percent
-            logger.info(f"CPU Usage: {cpu_usage:.2f}% | RAM Usage: {ram_usage:.2f}%")
 
         return outputs, img_info
 
 
-def image_demo(predictor, vis_folder, path, current_time, save_result):
-    files = [path] if os.path.isfile(path) else sorted(get_image_list(path))
-    for image_name in files:
-        outputs, img_info = predictor.inference(image_name)
-        if save_result:
-            save_folder = os.path.join(vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S", current_time))
+def batch_video_demo(predictor, vis_folder, args):
+    video_paths = []
+
+    # If input is a directory, get all video files
+    if os.path.isdir(args.path):
+        video_paths = [os.path.join(args.path, f) for f in os.listdir(args.path) if f.endswith(('.mp4', '.avi', '.mov'))]
+    else:
+        video_paths = args.path.split(",")
+
+    if not video_paths:
+        logger.error("No video files found!")
+        return
+    
+    total_videos = len(video_paths)
+    total_frames = 0
+    total_latency = 0.0
+    total_fps = 0.0
+    gpu_usage_list = []
+
+    logger.info(f"Processing {total_videos} videos...")
+
+    for vid_idx, video_path in enumerate(video_paths):
+        cap = cv2.VideoCapture(video_path)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        logger.info(f"[{vid_idx+1}/{total_videos}] Processing video: {video_path}")
+        logger.info(f"Video resolution: {width}x{height} | FPS: {fps}")
+
+        if args.save_result:
+            save_folder = os.path.join(vis_folder, time.strftime("%Y_%m_%d_%H_%M_%S"))
             os.makedirs(save_folder, exist_ok=True)
-            save_file_name = os.path.join(save_folder, os.path.basename(image_name))
-            logger.info(f"Saving detection result in {save_file_name}")
-            cv2.imwrite(save_file_name, img_info["raw_img"])
+            save_path = os.path.join(save_folder, os.path.basename(video_path))
+            logger.info(f"Output video will be saved at: {save_path}")
+
+            vid_writer = cv2.VideoWriter(
+                save_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
+            )
+
+        frame_id = 0
+        video_latency = 0.0
+        video_fps = []
+
+        while True:
+            ret_val, frame = cap.read()
+            if not ret_val:
+                break  
+
+            t0 = time.time()
+            outputs, img_info = predictor.inference(frame)
+            infer_time = time.time() - t0
+            frame_fps = 1.0 / infer_time if infer_time > 0 else 0  
+
+            video_latency += infer_time
+            video_fps.append(frame_fps)
+
+            logger.info(f"[Video {vid_idx+1} - Frame {frame_id}] Infer time: {infer_time:.4f}s | FPS: {frame_fps:.2f}")
+            frame_id += 1
+
+            if args.save_result:
+                vid_writer.write(frame)
+
+        cap.release()
+        if args.save_result:
+            vid_writer.release()
+        
+        avg_video_fps = sum(video_fps) / len(video_fps)
+        avg_video_latency = (video_latency / len(video_fps)) * 1000  # Convert to ms
+        
+        logger.info(f"Video {vid_idx+1} completed: Avg FPS: {avg_video_fps:.2f}, Avg Latency: {avg_video_latency:.2f} ms")
+
+        total_frames += len(video_fps)
+        total_latency += video_latency
+        total_fps += avg_video_fps
+
+        # Track GPU usage in %
+        if torch.cuda.is_available() and args.device == "gpu":
+            gpu_memory_allocated = torch.cuda.memory_allocated() / (1024 * 1024)
+            gpu_memory_total = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
+            gpu_usage_percent = (gpu_memory_allocated / gpu_memory_total) * 100
+            gpu_usage_list.append(gpu_usage_percent)
+    
+    avg_fps = total_fps / total_videos
+    avg_latency = (total_latency / total_frames) * 1000 if total_frames > 0 else 0
+    avg_gpu_usage = sum(gpu_usage_list) / len(gpu_usage_list) if gpu_usage_list else 0
+
+    logger.info("Batch Processing Completed")
+    logger.info(f"Total Videos: {total_videos} | Total Frames: {total_frames}")
+    logger.info(f"Average FPS: {avg_fps:.2f} | Average Latency: {avg_latency:.2f} ms")
+    logger.info(f"Average GPU Usage: {avg_gpu_usage:.2f}%")
 
 
-def main(exp, args):
-    args.experiment_name = args.experiment_name or exp.exp_name
-    file_name = os.path.join(exp.output_dir, args.experiment_name)
-    os.makedirs(file_name, exist_ok=True)
+def make_parser():
+    parser = argparse.ArgumentParser("YOLOX Demo")
+    parser.add_argument("demo", choices=["image", "video"], help="Demo type: 'image' or 'video'")
+    parser.add_argument("-n", "--name", type=str, required=True, help="Model name")
+    parser.add_argument("-c", "--ckpt", type=str, required=True, help="Path to checkpoint")
+    parser.add_argument("--path", type=str, required=True, help="Path to image(s) or video(s)")
+    parser.add_argument("--conf", type=float, default=0.3, help="Confidence threshold for detection")
+    parser.add_argument("--nms", type=float, default=0.3, help="Non-maximum suppression threshold")
+    parser.add_argument("--tsize", type=int, default=640, help="Test image size")
+    parser.add_argument("--save_result", action="store_true", help="Save inference result")
+    parser.add_argument("--device", default="cpu", choices=["cpu", "gpu"], help="Device to run inference (cpu or gpu)")
+    return parser
 
-    vis_folder = os.path.join(file_name, "vis_res") if args.save_result else None
-    if vis_folder:
-        os.makedirs(vis_folder, exist_ok=True)
 
-    logger.info(f"Args: {args}")
-    exp.test_conf = args.conf or exp.test_conf
-    exp.nmsthre = args.nms or exp.nmsthre
-    exp.test_size = (args.tsize, args.tsize) if args.tsize else exp.test_size
+def main():
+    args = make_parser().parse_args()
+    exp = get_exp(None, args.name)
 
     model = exp.get_model()
-    logger.info(f"Model Summary: {get_model_info(model, exp.test_size)}")
-
     if args.device == "gpu":
         model.cuda()
-        if args.fp16:
-            model.half()
-    model.eval()
+        model.eval()
 
-    ckpt_file = args.ckpt or os.path.join(file_name, "best_ckpt.pth")
-    logger.info("loading checkpoint")
-    ckpt = torch.load(ckpt_file, map_location="cpu")
-    model.load_state_dict(ckpt["model"])
-    logger.info("loaded checkpoint done.")
+    predictor = Predictor(model, exp, device=args.device)
+    vis_folder = os.path.join(exp.output_dir, args.name, "vis_res")
+    os.makedirs(vis_folder, exist_ok=True)
 
-    predictor = Predictor(model, exp, COCO_CLASSES, None, None, args.device, args.fp16, args.legacy)
-    current_time = time.localtime()
-
-    if args.demo == "image":
-        image_demo(predictor, vis_folder, args.path, current_time, args.save_result)
+    batch_video_demo(predictor, vis_folder, args)
 
 
 if __name__ == "__main__":
-    args = make_parser().parse_args()
-    exp = get_exp(args.exp_file, args.name)
-    main(exp, args)
+    configure_module()
+    main()
